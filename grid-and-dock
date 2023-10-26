@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+#
+# Copyright 2023 - University of Kansas - All rights reserved.
+# Written by Matthew Copeland (matthew@ku.edu)
+#
+# This file is licensed under the GNU Affero General Public License v3.0.
+#
+
+import sys
+import os
+import subprocess
+import shutil
+
+
+def usage():
+    provided_arguments = " ".join(sys.argv)
+    print("Provided Arguments:  ", provided_arguments)
+    command = "grid-and-dock-echo "
+    arguments = "ligand.pdbqt receptor.pdbqt grid-template-file.gpf results-directory "
+    optional_arguments = "[job-identifier]"
+    message = command + arguments + optional_arguments
+    print(
+        "\nUsage: ", message, "\n"
+                              "\n\tresults-directory: \t",
+        "The location of all files associated with this job.",
+        "\n\tjob-identifer: \t\t",
+        "[Optional] A text tag to identify the job [default = ligand filename].\n",
+        "\n\nAn output log file called output.log will be in the results directory,",
+        "along with all files associated with job.",
+        "\n\nPlease direct support and implementation questions to Matthew Copeland to",
+        "matthew@ku.edu.\n")
+    sys.exit(-1)
+
+
+def check_argument_file(filename, file_type_message, log):
+    """
+        Validates the input file exists and is a file, or fails the program.
+
+    :param filename:  The filename to check.
+    :param file_type_message: The filename type for the message
+    :param log: The open log to send output.
+    :return: None
+    """
+    if not (os.path.exists(filename) and os.path.isfile(filename)):
+        log.write(file_type_message + " file '" + filename + "' does not exist.\n")
+        sys.exit(1)
+
+
+def execute_command_and_save_output_to_log(working_directory, command_array, log):
+    """
+        This function runs the provided command in the command array with the
+        specified working directory, and outputs the results to the log file.
+        of the command fails.
+
+    :param working_directory:  The directory from which to run the program.
+    :param command_array: An array where each space in the command path indicates
+                          a new array cell.
+    :param log:  The object to write log information to.
+    :return: True, if properly executed, False otherwise.
+    """
+    process = subprocess.run(command_array, cwd=working_directory,
+                             stdout=log,
+                             stderr=log)
+    return_code = process.returncode
+    result = False
+    if return_code == 0:
+        result = True
+    else:
+        log.write(" ".join(command_array) + " failed with return code "
+                  + str(return_code) + "\n")
+
+    return result
+
+
+def create_command_arrays(ligand_filename, receptor_filename, grid_parameter_filename,
+                          grid_template_filename, docking_parameter_filename,
+                          docking_log_filename):
+    """
+        This function generates the command arrays and returns them as a dictionary
+
+    :param ligand_filename:
+    :param receptor_filename:
+    :param grid_parameter_filename:
+    :param grid_template_filename:
+    :param docking_parameter_filename:
+    :param docking_log_filename:
+    :return: Returns a dictionary of the command arrays.
+    """
+    mgl_dir = "/opt/mgltools/"
+    mgl_util_dir = mgl_dir + "MGLToolsPckgs/AutoDockTools/Utilities24/"
+    mgl_pythonsh = mgl_dir + "bin/pythonsh"
+    autogrid_cmd = "/usr/bin/autogrid4"
+    autodock_cmd = "/usr/bin/autodock4"
+
+    gpf_command = [mgl_pythonsh,
+                   mgl_util_dir + "prepare_gpf4.py",
+                   "-l", ligand_filename,
+                   "-r", receptor_filename,
+                   "-o", grid_parameter_filename,
+                   "-i", grid_template_filename]
+
+    autogrid_command = [autogrid_cmd,
+                        "-p ", grid_parameter_filename]
+
+    dpf_command = [mgl_pythonsh,
+                   mgl_util_dir + "prepare_dpf4.py",
+                   "-l", ligand_filename,
+                   "-r", receptor_filename,
+                   "-o", docking_parameter_filename]
+
+    autodock_command = [autodock_cmd,
+                        "-p", docking_parameter_filename,
+                        "-l", docking_log_filename]
+
+    return {"gpf": gpf_command, "autogrid": autogrid_command,
+            "dpf": dpf_command, "autodock": autodock_command}
+
+
+def check_return_value(flag, job_identifier, exit_value):
+    """
+        Checks the return code of a command and prints to stdout
+        a failure command, if necessary, and then exits the program
+        with the provided exit code.
+
+    :param flag:
+    :param job_identifier:
+    :param exit_value:
+    :return:
+    """
+    if not flag:
+        print(job_identifier, " failed.")
+        sys.exit(exit_value)
+
+
+def create_results_dir_from_ligand(ligand_filepath):
+    ligand_filename = os.path.basename(ligand_filepath)
+    ligand = ligand_filename.replace(".pdbqt", "")
+
+    working_directory = os.path.join(os.getcwd(), ligand[:4])
+    working_directory = os.path.join(working_directory, ligand)
+    os.makedirs(working_directory, mode=0o755, exist_ok=True)
+    return working_directory
+
+
+def prepare_results_dir(results_directory, ligand_filepath, receptor_filepath,
+                        grid_template_filepath):
+    """
+        Copies the input files into the result's directory.
+
+    :param results_directory:
+    :param ligand_filepath:
+    :param receptor_filepath:
+    :param grid_template_filepath:
+    :return: None
+    """
+    copy_file_to_results_directory(results_directory, ligand_filepath)
+    copy_file_to_results_directory(results_directory, receptor_filepath)
+    copy_file_to_results_directory(results_directory, grid_template_filepath)
+
+
+def copy_file_to_results_directory(results_directory, filepath):
+    """
+        Simple helper function to take the filepath and copy the
+        associated file into the results directory.
+    :param results_directory:
+    :param filepath:
+    :return: None
+    """
+    try:
+        shutil.copyfile(filepath, os.path.join(results_directory,
+                                               os.path.basename(filepath)))
+    except IOError as e:
+        print("Unable to copy file. %s", e)
+
+
+def prepare_inputs_and_commands(results_directory, ligand_filepath,
+                                receptor_filepath, grid_template_filepath, log_file):
+    """
+        This function validates the input files exist and have the right extension,
+        then copies them into the result's directory, and finally creates
+        the commands that will need to be executed.
+    :param results_directory:
+    :param ligand_filepath:
+    :param receptor_filepath:
+    :param grid_template_filepath:
+    :param log_file:
+    :return: A dictionary of the commands to execute.
+    """
+    check_argument_file(receptor_filepath, "Receptor file", log_file)
+    check_argument_file(grid_template_filepath, "Grid template", log_file)
+    check_argument_file(ligand_filepath, "Ligand file", log_file)
+    if not ligand_filepath.endswith(".pdbqt"):
+        log_file.write("Ligand file '" + ligand_filepath +
+                       "'does not end with .pdbqt\n")
+        print(ligand_filepath, " failed.")
+        sys.exit(1)
+
+    ligand_filename = os.path.basename(ligand_filepath)
+    receptor_filename = os.path.basename(receptor_filepath)
+    grid_template_filename = os.path.basename(grid_template_filepath)
+#    grid_parameter_filename = os.path.basename(ligand_filepath).replace("pdbqt", "gpf")
+#    docking_parameter_filename = os.path.basename(ligand_filepath).replace("pdbqt",
+#                                                                           "dpf")
+#    docking_log_filename = os.path.basename(ligand_filepath).replace("pdbqt", "dlg")
+
+    grid_parameter_filename = "grid-parameter-file.gpf"
+    docking_parameter_filename = "docking-parameter-file.dpf"
+    docking_log_filename = "docking-log.dlg"
+
+    prepare_results_dir(results_directory, ligand_filepath, receptor_filepath,
+                        grid_template_filepath)
+
+    commands = create_command_arrays(ligand_filename, receptor_filename,
+                                     grid_parameter_filename,
+                                     grid_template_filename,
+                                     docking_parameter_filename,
+                                     docking_log_filename)
+
+    return commands
+
+
+def run_grid_and_dock(results_directory, job_identifier, commands, log_file):
+    """
+        This function takes the commands and runs them in the correct order.
+
+    :param results_directory:
+    :param job_identifier:
+    :param commands:
+    :param log_file:
+    :return: None
+    """
+    # The argument_identifier is a bit of hack for when you are running multiple
+    # of this program to have a way to identify what is being run.
+
+    gpf = execute_command_and_save_output_to_log(results_directory, commands["gpf"],
+                                                 log_file)
+    check_return_value(gpf, job_identifier, 2)
+
+    autogrid = execute_command_and_save_output_to_log(results_directory,
+                                                      commands["autogrid"],
+                                                      log_file)
+    check_return_value(autogrid, job_identifier, 3)
+
+    dpf = execute_command_and_save_output_to_log(results_directory,
+                                                 commands["dpf"],
+                                                 log_file)
+    check_return_value(dpf, job_identifier, 4)
+
+    autodock = execute_command_and_save_output_to_log(results_directory,
+                                                      commands["autodock"],
+                                                      log_file)
+    check_return_value(autodock, job_identifier, 5)
+
+
+def main():
+    argc = len(sys.argv)
+    if argc < 5 or argc > 6 or "--help" in sys.argv or "-h" in sys.argv:
+        usage()
+
+    ligand_filepath = sys.argv[1]
+    receptor_filepath = sys.argv[2]
+    grid_template_filepath = sys.argv[3]
+    results_directory = sys.argv[4]
+    if argc == 6:
+        job_identifier = sys.argv[5]
+    else:
+        job_identifier = ligand_filepath
+
+    results_directory = os.path.join(results_directory, "")
+
+    if not os.path.exists(results_directory):
+        os.makedirs(results_directory, mode=0o755, exist_ok=True)
+
+    log_filepath = os.path.join(results_directory, "output.log")
+
+    with open(log_filepath, "w") as log_file:
+        log_file.write("Program executed with the following arguments:\n")
+        log_file.write(" ".join(sys.argv))
+        commands = prepare_inputs_and_commands(results_directory, ligand_filepath,
+                                               receptor_filepath,
+                                               grid_template_filepath, log_file)
+        run_grid_and_dock(results_directory, job_identifier, commands, log_file)
+        print(job_identifier, " completed.")
+
+
+if __name__ == '__main__':
+    main()

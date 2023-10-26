@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+#
+# Copyright 2023 - University of Kansas - All rights reserved.
+# Written by Matthew Copeland (matthew@ku.edu)
+#
+# This file is licensed under the GNU Affero General Public License v3.0.
+#
+
+import sys
+from pathlib import Path
+import csv
+
+
+def usage():
+    command = "make-receptor-list"
+    arguments = "directory-containing-receptor-and-grid-files receptor-list.txt"
+    print("Usage:  ", command, arguments, "\n")
+    sys.exit(1)
+
+
+def main():
+    argc = len(sys.argv)
+    if argc != 3 and "--help" not in sys.argv and "-h" not in sys.argv:
+        usage()
+
+    directory = sys.argv[1]
+    dir_path = Path(directory)
+    output_file = sys.argv[2]
+
+    receptors = []
+    grids_for_receptors = {}
+    if dir_path.exists() and dir_path.is_dir():
+        files = [x for x in dir_path.iterdir() if x.is_file() and not x.is_dir()]
+        for file in files:
+            if str(file.absolute()).endswith(".pdbqt"):
+                if file not in receptors:
+                    receptors.append(file)
+            elif str(file).endswith(".gpf"):
+                receptor = str(file.absolute()).replace(".gpf", ".pdbqt")
+                receptors.append(receptor)
+                grids_for_receptors[receptor] = file.absolute()
+            else:
+                print("Unidentified file: ", str(file))
+
+        with open(output_file, "w") as output:
+            fieldnames = ["receptor-file", "reference-grid-parameter-file"]
+            writer = csv.DictWriter(output, delimiter=',', dialect='unix',
+                                       fieldnames=fieldnames)
+            writer.writeheader()
+            for receptor in grids_for_receptors:
+                entry = {"receptor-file": receptor,
+                         "reference-grid-parameter-file": grids_for_receptors[receptor]}
+                writer.writerow(entry)
+    else:
+        usage()
+
+
+if __name__ == '__main__':
+    main()

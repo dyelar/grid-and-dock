@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+#
+# Copyright 2023 - University of Kansas - All rights reserved.
+# Written by Matthew Copeland (matthew@ku.edu)
+#
+# This file is licensed under the GNU Affero General Public License v3.0.
+#
+import sys
+from pathlib import Path
+
+
+def usage():
+    print("Usage:  make-ligand-list directory-containing-ligand-files ligand-list.txt")
+    sys.exit(1)
+
+
+def main():
+    argc = len(sys.argv)
+    if argc != 3 and "--help" not in sys.argv and "-h" not in sys.argv:
+        usage()
+
+    directory = sys.argv[1]
+    output_file = sys.argv[2]
+    dirpath = Path(directory)
+
+    if dirpath.exists() and dirpath.is_dir():
+        files = [x for x in dirpath.iterdir() if x.is_file() and not x.is_dir()]
+        with open(output_file, "w") as output:
+            for file in files:
+                output.write(str(file.absolute()) + "\n")
+    else:
+        usage()
+
+
+if __name__ == '__main__':
+    main()

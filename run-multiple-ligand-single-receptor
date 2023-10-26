@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+#
+# Copyright 2023 - University of Kansas - All rights reserved.
+# Written by Matthew Copeland (matthew@ku.edu)
+#
+# This file is licensed under the GNU Affero General Public License v3.0.
+#
+
+usage () {
+  echo "Incorrect number of parameters"
+  echo "Usage:  "
+  echo "  run-multiple-ligand-single-receptor.sh ligand-list.txt receptor.pdbqt grid-file.gpf number-of-threads [results-base-directory]"
+  echo ""
+  echo "This program assumes your ligand file and the receptors and grid filenames in "
+  echo "your receptor and grid file list have a .pdbqt and .gpf extension."
+  exit 4
+}
+
+if [ "$#" -ne 4 ] && [ "$#" -ne 5 ]; then
+  usage
+fi
+
+ligand_list_filename=$1
+receptor_filename=$2
+grid_template_filename=$3
+number_of_threads=$4
+base_results_directory=""
+if [ "$#" -eq 5 ]; then
+  base_results_directory=$5
+else
+  base_results_directory=$PWD
+fi
+
+generate-parallel-arguments ligand "$ligand_list_filename" "$receptor_filename" "$grid_template_filename" "$base_results_directory" | parallel -j "$number_of_threads" --colsep '\0' grid-and-dock {}

@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+#
+# Copyright 2023 - University of Kansas - All rights reserved.
+# Written by Matthew Copeland (matthew@ku.edu)
+#
+# This file is licensed under the GNU Affero General Public License v3.0.
+#
+
+import sys
+import os
+import subprocess
+import shutil
+import pathlib
+import csv
+
+
+def usage():
+    command = "generate-parallel-arguments"
+    arguments = "ligand|receptor|both ligand.pdbqt|ligand-list-filename receptor.pdbqt|receptor-list-filename grid-template.in [base-results-directory]"
+
+    message = command + arguments
+    print(
+        "\nUsage: ", message, "\n"
+        "\n\tligand | receptor | both: \t\t\t",
+        "This argument indicates on which side there will be multiple files or if it is both sides.",
+        "\n\tligand.pdbqt | ligand-list-filename: \t\t",
+        "Either the ligand file or a file that contains a list of the file locations.",
+        "\n\treceptor.pdbqt | receptor-list-filename:\t",
+        "Either the receptor file or a file that contains a list of the file locations.",
+        "\n\tbase-results-directory: \t\t\t",
+        "[Optional]The directory you want all of the result directories created within. [default=current directory]",
+        "\n\nPlease direct support and implementation questions to Matthew Copeland via",
+        "email at matthew@ku.edu.\n")
+    sys.exit(-1)
+
+
+def get_short_and_long_portion(filepath):
+    path_object = pathlib.Path(filepath)
+    base = os.path.basename(filepath)
+    base = base.replace(''.join(path_object.suffixes), "")
+    short_base = base[:4]
+
+    return base, short_base
+
+
+def create_directory_path(base_results_directory, filepath):
+    base, short_base = get_short_and_long_portion(filepath)
+    results_directory = os.path.join(base_results_directory, short_base)
+    results_directory = os.path.join(results_directory, base)
+    results_directory = os.path.join(results_directory, "")
+    return results_directory, base
+
+
+def create_dual_directory_path(base_results_directory, ligand, receptor):
+    ligand_base, ligand_short = get_short_and_long_portion(ligand)
+    receptor_base, receptor_short = get_short_and_long_portion(receptor)
+
+    results_directory = os.path.join(base_results_directory, receptor_short)
+    results_directory = os.path.join(results_directory, receptor_base)
+    results_directory = os.path.join(results_directory, ligand_short)
+    results_directory = os.path.join(results_directory, ligand_base)
+
+    identifier = str(receptor_base) + "-" + str(ligand_base)
+
+    return results_directory, identifier
+
+
+def read_receptor_grid_combo_file(filepath):
+    results = {}
+    with open(filepath) as receptor_and_grid_file:
+        reader = csv.DictReader(receptor_and_grid_file, delimiter=',', dialect='unix')
+        for row in reader:
+            results[row["receptor-file"]] = row["reference-grid-parameter-file"]
+
+    return results
+
+
+def read_ligands_file(filepath):
+    result = []
+    with open(filepath) as ligands:
+        for ligand in ligands:
+            ligand = ligand.rstrip()
+            result.append(ligand)
+    return result
+
+
+def handle_multiple_ligands(argc):
+    ligand_filepath = sys.argv[2]
+    receptor_filepath = sys.argv[3]
+    grid_template_filepath = sys.argv[4]
+    if argc == 6:
+        base_results_directory = sys.argv[5]
+    else:
+        base_results_directory = os.getcwd()
+
+    base_results_directory = os.path.join(base_results_directory, "")
+    ligands = read_ligands_file(ligand_filepath)
+    for ligand in ligands:
+        results_directory, identifier = create_directory_path(base_results_directory,
+                                                              ligand)
+        line = "\0".join(
+            [ligand, receptor_filepath, grid_template_filepath, results_directory,
+             identifier])
+        print(line)
+
+
+def handle_multiple_receptors(argc):
+    ligand_filepath = sys.argv[2]
+    receptor_and_grid_filepath = sys.argv[3]
+    if argc == 5:
+        base_results_directory = sys.argv[4]
+    else:
+        base_results_directory = os.getcwd()
+
+    base_results_directory = os.path.join(base_results_directory, "")
+    receptors_and_grids = read_receptor_grid_combo_file(receptor_and_grid_filepath)
+    for receptor in receptors_and_grids:
+        grid_template = receptors_and_grids[receptor]
+        results_directory, identifier = create_directory_path(base_results_directory,
+                                                        receptor)
+        line = "\0".join(
+            [ligand_filepath, receptor, grid_template, results_directory,
+             identifier])
+        print(line)
+
+
+def handle_multiple_receptors_and_ligands(argc):
+    ligand_filepath = sys.argv[2]
+    receptor_and_grid_filepath = sys.argv[3]
+    if argc == 5:
+        base_results_directory = sys.argv[4]
+    else:
+        base_results_directory = os.getcwd()
+
+    ligands = read_ligands_file(ligand_filepath)
+    receptors_and_grids = read_receptor_grid_combo_file(receptor_and_grid_filepath)
+
+    for receptor in receptors_and_grids:
+        grid_filepath = receptors_and_grids[receptor]
+        for ligand in ligands:
+            results_directory, identifier = \
+                create_dual_directory_path(base_results_directory, ligand, receptor)
+            line = "\0".join(
+                [ligand, receptor, grid_filepath, results_directory, identifier])
+            print(line)
+
+
+def main():
+    argc = len(sys.argv)
+    if argc != 5 and argc != 6 and "--help" not in sys.argv and "-h" not in sys.argv:
+        usage()
+
+    side_of_multiples = sys.argv[1]
+
+    if side_of_multiples == "ligand":
+        handle_multiple_ligands(argc)
+    elif side_of_multiples == "receptor":
+        handle_multiple_receptors(argc)
+    elif side_of_multiples == "both":
+        handle_multiple_receptors_and_ligands(argc)
+    else:
+        usage()
+
+
+if __name__ == '__main__':
+    main()
